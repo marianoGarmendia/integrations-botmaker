@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import router from './routes';
+// import router from './routes';
+import cors from 'cors';
 
 
 dotenv.config();
@@ -14,8 +15,10 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(cors())
+
 app.use(express.json());
-app.use('/api', router);
+// app.use('/api', router);
 app.post('/', (req, res) => {
   console.log('Ruta raíz accedida');
   console.log(req.body);
