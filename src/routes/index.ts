@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ejemploRouter } from '@/routes/ejemplo.route';
+import { ejemploRouter } from './ejemplo.route';
 
 const router = Router();
 
