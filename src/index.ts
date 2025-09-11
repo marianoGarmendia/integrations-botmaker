@@ -50,7 +50,7 @@ console.log(req.headers)
 
 
 
-  return res.json({ message: "pong" }); 
+return res.json({ replyText: " Respuesta del agente LangGraph" });
 
 })
 
