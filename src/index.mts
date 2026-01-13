@@ -13,7 +13,7 @@ const MAX_RECENT_IDS = 20;
 const recentMessageIdsByUser = new Map<string, string[]>();
 
 // Memoria para limitar cantidad de respuestas por cliente
-const MAX_AGENT_REPLIES = 7;
+const MAX_AGENT_REPLIES = 20;
 const customerReplyCounts = new Map<string, number>();
 // Memoria para controlar inactividad por cliente (último timestamp recibido)
 const lastCustomerMessageAt = new Map<string, number>();
