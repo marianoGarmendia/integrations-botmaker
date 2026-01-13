@@ -259,7 +259,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   }
 
   if(response.isFaq && profileComplete) {
-    return { messages: [new AIMessage(response.answer)] };
+    return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
   }
 
 
@@ -331,7 +331,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   // );
   console.log(responseEnsureToolResponse);
 
-  return { messages: [responseEnsureToolResponse] };
+  return { messages: [responseEnsureToolResponse] , volver_al_menu: false };
 };
 
 // TODO:
