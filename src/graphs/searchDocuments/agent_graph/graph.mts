@@ -262,7 +262,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   console.log(response);
 
   if(response.volver_al_menu) {
-    return { messages: [new AIMessage("Volviendo al menu principal...")], volver_al_menu: true };
+    return { messages: [new AIMessage("")], volver_al_menu: true };
   }
 
   if(response.isFaq && profileComplete) {
