@@ -8,7 +8,7 @@ import {
 } from "../utils/filters.mjs";
 
 
-import { MetadataRow } from "../types/supabase.d.js";
+import { MetadataRow } from "../types/supabase.d.mjs";
 import { z } from "zod";
 import dotenv from "dotenv";
 dotenv.config();
