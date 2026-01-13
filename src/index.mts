@@ -111,9 +111,10 @@ console.log("Simulacion invokando al agente langgraph")
 
    
     console.log("result linee 72 - index.ts : >>>>>");
+    const volver_al_menu = result.volver_al_menu ?? false;
     // console.log(result);
     // const responseAgent = result.messages[result.messages.length - 1].content as string
-    return res.json({ replyText:result.messages[result.messages.length - 1].content as string, agent_is_speak: true }); // Responder a Botmaker
+    return res.json({ replyText:result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu  }); // Responder a Botmaker
   }
 
  

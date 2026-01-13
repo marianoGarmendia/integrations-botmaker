@@ -110,6 +110,10 @@ const stateAnnotation = Annotation.Root({
     localidad: string;
   }>,
   profileIsComplete: Annotation<boolean>,
+  volver_al_menu: Annotation<boolean>({
+    value: (_prev, next) => next, // último valor gana
+    default: () => false,
+  }),
 });
 
 const schema = z.object({
@@ -117,6 +121,7 @@ const schema = z.object({
   plan: z.string(),
   localidad: z.string(),
   profileIsComplete: z.boolean(),
+  volver_al_menu: z.boolean().default(false),
 });
 const profileTool = tool(
   async ({ query }: { query: string }) => {
@@ -208,13 +213,14 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
 
   const systemMessageInitial = new SystemMessage(`
-    Eres un asistente inteligente y tu tarea es identificar si la pregunta del usuario puede ser respondida con la inforamcion disponible en el contexto dentro de las preguntas frecuentes.
+    Eres un asistente inteligente y tu tarea es identificar si la pregunta del usuario puede ser respondida con la información disponible en el contexto dentro de las preguntas frecuentes o si desea vovler al menu principal.
     Tendras una salida estructurada con el siguiente esquema:
 
     {
     answer: // La respuesta a la pregunta del usuario si la encontraste en el contexto de las preguntas frecuentes
     question: // La pregunta del usuario
     isFaq: // Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes
+    volver_al_menu: // Booleano que indica si el usuario desea volver al menu principal
     }
 
     ## Contexto de las preguntas frecuentes:
@@ -233,6 +239,8 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
       .describe(
         "Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes",
       ),
+
+    volver_al_menu: z.boolean().describe("Booleano que indica si el usuario desea volver al menu principal, true si desea volver al menu principal, false si no desea volver al menu principal"),
   });
 
   const llm = new ChatOpenAI({
@@ -245,6 +253,10 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   const response = await llm.invoke([systemMessageInitial, ...messages]);
   console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
   console.log(response);
+
+  if(response.volver_al_menu) {
+    return { messages: [new AIMessage("Volviendo al menu principal...")], volver_al_menu: true };
+  }
 
   if(response.isFaq && profileComplete) {
     return { messages: [new AIMessage(response.answer)] };
