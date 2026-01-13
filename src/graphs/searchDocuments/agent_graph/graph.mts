@@ -121,7 +121,7 @@ const schema = z.object({
   plan: z.string(),
   localidad: z.string(),
   profileIsComplete: z.boolean(),
-  volver_al_menu: z.boolean().default(false),
+ 
 });
 const profileTool = tool(
   async ({ query }: { query: string }) => {
