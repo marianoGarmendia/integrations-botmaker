@@ -213,7 +213,14 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
 
   const systemMessageInitial = new SystemMessage(`
-    Eres un asistente inteligente y tu tarea es identificar si la pregunta del usuario puede ser respondida con la información disponible en el contexto dentro de las preguntas frecuentes o si desea vovler al menu principal.
+    Eres un asistente inteligente y tu tarea es identificar si la pregunta del usuario puede ser respondida con la información disponible en el contexto dentro de las preguntas frecuentes.
+    También debes detectar si el usuario desea volver al menú principal.
+    
+    IMPORTANTE: Si el usuario responde con un mensaje de cierre/despedida/agradecimiento FINAL (por ejemplo: "gracias", "muchas gracias", "bueno gracias", "listo gracias", "ok gracias", "chau", "hasta luego", "nos vemos") y NO incluye una nueva pregunta/pedido (ej: no agrega "y ...", no pregunta algo, no solicita otra cosa), entonces debes marcar volver_al_menu = true.
+    Si el usuario agradece pero además hace una nueva consulta (ej: "gracias, y dónde queda?", "gracias, pero necesito otra cosa"), entonces volver_al_menu = false.
+    
+    CONTEXTO CONVERSACIONAL (CLAVE): Debes mirar el ÚLTIMO mensaje del asistente en el historial.
+    - Si el último mensaje del asistente fue una pregunta/confirmación/ofrecimiento (ej: "¿querés que te comparta el enlace...?", "¿te lo paso?", "¿querés que lo busque?") y el usuario responde afirmando aunque incluya agradecimiento (ej: "sí gracias", "dale gracias", "ok gracias"), eso NO es una finalización. En ese caso volver_al_menu = false.
     Tendras una salida estructurada con el siguiente esquema:
 
     {
@@ -240,7 +247,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
         "Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes",
       ),
 
-    volver_al_menu: z.boolean().describe("Booleano que indica si el usuario desea volver al menu principal, true si desea volver al menu principal, false si no desea volver al menu principal"),
+    volver_al_menu: z.boolean().describe("true si el usuario quiere volver al menú o si su mensaje es un cierre/despedida/agradecimiento FINAL (ej: 'gracias', 'muchas gracias', 'bueno gracias', 'listo gracias', 'ok gracias', 'chau', 'hasta luego') y NO incluye una nueva pregunta/pedido. Si agradece pero además consulta algo nuevo (ej: 'gracias, y dónde queda?'), debe ser false."),
   });
 
   const llm = new ChatOpenAI({
