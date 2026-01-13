@@ -1,0 +1,14 @@
+{
+  "node_version": "20",
+  "graphs": {
+    
+    "primedic": "./searchDocuments/agent_graph/graph.mts:graph"
+  },
+
+  "http": {
+    "app": "./http.mts:app"
+  },
+  "env": {
+    "LANGGRAPH_CONFIG": "{\"agent\": {\"configurable\": {\"model_name\": \"openai\"}}}"
+  }
+}
