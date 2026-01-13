@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ejemploRouter } from './ejemplo.route';
+import { ejemploRouter } from './ejemplo.route.mjs';
 
 const router = Router();
 
