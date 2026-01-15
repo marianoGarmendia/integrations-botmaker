@@ -293,7 +293,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
   }
 
-  return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
+  // return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
 
 
 
@@ -322,7 +322,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
       return await model.invoke([systemMessage, ...trimmed]);
     } catch (err) {
       if (isMissingToolResponseError(err)) {
-        const fixed = await ensureToolResponses(trimmed);
+        const fixed = await ensureToolResponses(messages);
         console.log("invoke model with fixer");
         return await model.invoke([systemMessage, ...fixed]);
       }
