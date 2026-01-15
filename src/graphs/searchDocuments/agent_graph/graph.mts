@@ -315,19 +315,19 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
   // const AIMessageFAQ = isFaqRetriever ? new AIMessage(`contexto para responder la consulta del usuario sugerencia del agente evaluador de FAQS: ${respuestaNumerada}`) : new AIMessage(`No se ha podido obtener respuestas de las preguntas frecuentes para esta consulta, evalúa otras opciones`)
 
-  // const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
-  //   try {
-  //     console.log("invoke model without fixer");
-  //     return await model.invoke([systemMessage, ...trimmed]);
-  //   } catch (err) {
-  //     if (isMissingToolResponseError(err)) {
-  //       const fixed = await ensureToolResponses(trimmed);
-  //       console.log("invoke model with fixer");
-  //       return await model.invoke([systemMessage, ...fixed]);
-  //     }
-  //     throw err;
-  //   }
-  // });
+  const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
+    try {
+      console.log("invoke model without fixer");
+      return await model.invoke([systemMessage, ...trimmed]);
+    } catch (err) {
+      if (isMissingToolResponseError(err)) {
+        const fixed = await ensureToolResponses(trimmed);
+        console.log("invoke model with fixer");
+        return await model.invoke([systemMessage, ...fixed]);
+      }
+      throw err;
+    }
+  });
 
   // const response = await model.invoke([systemMessage, new AIMessage(`Sugerencia de respuesta del agente evaluador de FAQS: ${evaluatorResponse.answer}`),...messages ]);
 
@@ -338,9 +338,11 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   // console.log(
   //   "responseEnsureToolResponse linee 136 - agent_graph/graph.ts : >>>>>",
   // );
-  // console.log(responseEnsureToolResponse);
+  console.log(responseEnsureToolResponse);
 
-  return { messages: [response] , volver_al_menu: false };
+  // OJO: `llm.withStructuredOutput(schema)` devuelve un objeto plano (no un BaseMessage),
+  // así que NO se debe devolver en `messages`. En su lugar devolvemos el AIMessage real del modelo.
+  return { messages: [responseEnsureToolResponse], volver_al_menu: false };
 };
 
 // TODO:
