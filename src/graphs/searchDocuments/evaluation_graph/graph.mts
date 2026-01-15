@@ -42,7 +42,7 @@ const prompt = ChatPromptTemplate.fromMessages([
 
 
 const model = new ChatOpenAI({
-  model: "gpt-4o",
+  model: "gpt-4o-mini",
   temperature: 0,
 })
 

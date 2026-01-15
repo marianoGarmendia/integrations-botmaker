@@ -257,20 +257,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     .withStructuredOutput(schema)
     .withConfig({ tags: ["nostream"] });
 
-  const response = await llm.invoke([systemMessageInitial, ...messages]);
-  console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
-  console.log(response);
-
-  if(response.volver_al_menu) {
-    return { messages: [new AIMessage("")], volver_al_menu: true };
-  }
-
-  if(response.isFaq && profileComplete) {
-    return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
-  }
-
-
-// trimeed messages unused for now
+    // trimeed messages unused for now
   const trimmed = await trimMessages(messages, {
     // Keep the last <= n_count tokens of the messages.
     strategy: "last",
@@ -294,6 +281,21 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     includeSystem: true,
   });
 
+  const response = await llm.invoke([systemMessageInitial, ...trimmed]);
+  console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
+  console.log(response);
+
+  if(response.volver_al_menu) {
+    return { messages: [new AIMessage("")], volver_al_menu: true };
+  }
+
+  if(response.isFaq && profileComplete) {
+    return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
+  }
+
+
+
+
   console.log("trimmed linee 114 - agent_graph/graph.ts : >>>>>");
   console.log(trimmed);
 
@@ -313,19 +315,19 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
   // const AIMessageFAQ = isFaqRetriever ? new AIMessage(`contexto para responder la consulta del usuario sugerencia del agente evaluador de FAQS: ${respuestaNumerada}`) : new AIMessage(`No se ha podido obtener respuestas de las preguntas frecuentes para esta consulta, evalúa otras opciones`)
 
-  const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
-    try {
-      console.log("invoke model without fixer");
-      return await model.invoke([systemMessage, ...messages]);
-    } catch (err) {
-      if (isMissingToolResponseError(err)) {
-        const fixed = await ensureToolResponses(trimmed);
-        console.log("invoke model with fixer");
-        return await model.invoke([systemMessage, ...fixed]);
-      }
-      throw err;
-    }
-  });
+  // const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
+  //   try {
+  //     console.log("invoke model without fixer");
+  //     return await model.invoke([systemMessage, ...trimmed]);
+  //   } catch (err) {
+  //     if (isMissingToolResponseError(err)) {
+  //       const fixed = await ensureToolResponses(trimmed);
+  //       console.log("invoke model with fixer");
+  //       return await model.invoke([systemMessage, ...fixed]);
+  //     }
+  //     throw err;
+  //   }
+  // });
 
   // const response = await model.invoke([systemMessage, new AIMessage(`Sugerencia de respuesta del agente evaluador de FAQS: ${evaluatorResponse.answer}`),...messages ]);
 
@@ -336,9 +338,9 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   // console.log(
   //   "responseEnsureToolResponse linee 136 - agent_graph/graph.ts : >>>>>",
   // );
-  console.log(responseEnsureToolResponse);
+  // console.log(responseEnsureToolResponse);
 
-  return { messages: [responseEnsureToolResponse] , volver_al_menu: false };
+  return { messages: [response] , volver_al_menu: false };
 };
 
 // TODO:
