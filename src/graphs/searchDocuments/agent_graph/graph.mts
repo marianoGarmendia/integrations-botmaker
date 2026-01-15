@@ -179,7 +179,7 @@ const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool];
 
 // Configurar modelo con herramientas
 const model = new ChatOpenAI({
-  model: "gpt-4o",
+  model: "gpt-5-mini",
   apiKey: process.env.OPENAI_API_KEY ,
   temperature: 0,
 })
@@ -195,7 +195,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
 // Dtermino esl perfil del usuario
   const agentProfile = new ChatOpenAI({
-    model: "gpt-4o",
+    model: "gpt-5-mini",
     temperature: 0,
   })
   .bindTools([profileTool], { tool_choice: "profile_tool", strict: true })
@@ -251,7 +251,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   });
 
   const llm = new ChatOpenAI({
-    model: "gpt-4o",
+    model: "gpt-5-mini",
     temperature: 0,
   })
     .withStructuredOutput(schema)
