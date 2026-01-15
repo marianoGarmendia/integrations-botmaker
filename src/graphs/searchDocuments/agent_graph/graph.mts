@@ -179,9 +179,9 @@ const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool];
 
 // Configurar modelo con herramientas
 const model = new ChatOpenAI({
-  model: "gpt-5-mini",
+  model: "gpt-5-nano-2025-08-07",
   apiKey: process.env.OPENAI_API_KEY ,
-  temperature: 0,
+ 
 })
   .bindTools(tools)
   .withConfig({ tags: ["nostream"] });
@@ -195,8 +195,8 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
 // Dtermino esl perfil del usuario
   const agentProfile = new ChatOpenAI({
-    model: "gpt-5-mini",
-    temperature: 0,
+    model: "gpt-5-nano-2025-08-07",
+  
   })
   .bindTools([profileTool], { tool_choice: "profile_tool", strict: true })
   .withConfig({ tags: ["nostream"] });
@@ -251,8 +251,8 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   });
 
   const llm = new ChatOpenAI({
-    model: "gpt-5-mini",
-    temperature: 0,
+    model: "gpt-5-nano-2025-08-07",
+   
   })
     .withStructuredOutput(schema)
     .withConfig({ tags: ["nostream"] });
