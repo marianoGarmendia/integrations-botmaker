@@ -281,7 +281,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     includeSystem: true,
   });
 
-  const response = await llm.invoke([systemMessageInitial, ...trimmed]);
+  const response = await llm.invoke([systemMessageInitial, ...messages]);
   console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
   console.log(response);
 
@@ -293,6 +293,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
   }
 
+  return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
 
 
 
