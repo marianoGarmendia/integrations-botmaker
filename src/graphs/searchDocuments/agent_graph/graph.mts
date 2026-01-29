@@ -22,7 +22,7 @@ import { trimMessages, SystemMessage, HumanMessage } from "@langchain/core/messa
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 // import { formatDocumentsAsString } from "langchain/util/document";
 // import { PromptTemplate } from "@langchain/core/prompts";
-import { SYSTEM_PROMPT_PRIMEDIC } from "../prompts.mjs";
+import { SYSTEM_PROMPT_PRIMEDIC , SYSTEM_PROMPT_PRIMEDIC_v2} from "../prompts.mjs";
 // import {
 //   RunnableSequence,
 //   RunnablePassthrough,
@@ -36,13 +36,14 @@ import {
 // import { makeRetriever } from "../shared/retrieval.mjs";
 import { FaqsToolRetriever } from "../../../tools/faq_tool.mjs";
 import { PlansToolRetriever } from "../../../tools/plan_documents_tool.mjs";
+import { cartillasTools } from "../../../tools/cartillasTools.mjs";
 import { z } from "zod";
 
 // import { makeSupabaseRetriever } from "../shared/retrieval.mjs";
 // import { z } from "zod";
 
 // import { z } from "zod";
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage , BaseMessage} from "@langchain/core/messages";
 import { prompt_faqs_context } from "../prompts.mjs";
 import dotenv from 'dotenv';
 dotenv.config();
@@ -114,6 +115,7 @@ const stateAnnotation = Annotation.Root({
     value: (_prev, next) => next, // último valor gana
     default: () => false,
   }),
+  summarize: Annotation<string>,
 });
 
 const schema = z.object({
@@ -162,7 +164,7 @@ const profileTool = tool(
 );
 
 // Lista de herramientas
-const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool];
+const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool, cartillasTools];
 
  const systemMessageProfile = new SystemMessage(`
       Eres asistente de primedic salud, una obra social de la plata, magdalena, chascomus y brandsen.
@@ -181,7 +183,7 @@ const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool];
 
 // Configurar modelo con herramientas
 const model = new ChatOpenAI({
-  model: "gpt-5-nano-2025-08-07",
+  model: "gpt-4o",
   apiKey: process.env.OPENAI_API_KEY ,
  
 })
@@ -191,10 +193,45 @@ const model = new ChatOpenAI({
 // Crear ToolNode
 const toolNode = new ToolNode(tools);
 
+const summarizeConversation = async (messages: BaseMessage[]) => {
+  const schemaSummarizeConversation = z.object({
+    summary: z.string().describe("La resumen de la conversacion al momento"),
+  });
+  const systemMessage = new SystemMessage(`
+    Eres un asistente que resume la conversacion al momento, obtiene la información clave de la conversación entre un usuario/afiliado y el asistente de atencion de primedic salud.
+    Respeta la salida estructurada con el schema provisto
+
+    ## Lista de mensajes de la conversacion:
+    ${messages.map((message) => message.content).join("\n")}
+    
+  `);
+
+  const llm = new ChatOpenAI({
+    model: "gpt-4o",
+    temperature: 0.2,
+  })
+  .withStructuredOutput(schemaSummarizeConversation)
+  .withConfig({ tags: ["nostream"] });
+
+  const response = await llm.invoke([systemMessage, ...messages]);
+  return response;
+}
+
+const buildPrompt = async ({prompt, summarize}: {prompt: string, summarize: string}) => {
+  return `
+  ${prompt}
+
+  ## Resumen de la conversacion al momento:
+  ${summarize}
+  
+  `
+}
+
 // Definir nodo LLM
 const llmNode = async (state: typeof stateAnnotation.State) => {
-  const { messages , profileIsComplete , profile } = state;
+  const { messages , profileIsComplete , summarize } = state;
   let profileComplete = false;
+  let profileArgs = {} as any;
 
   if(!profileIsComplete) {
     
@@ -214,6 +251,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
 
       profileComplete = toolArgs?.profileIsComplete;
+      profileArgs = toolArgs;
   }
 
 
@@ -236,6 +274,9 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     isFaq: // Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes
     volver_al_menu: // Booleano que indica si el usuario desea volver al menu principal
     }
+
+    ## información del perfil del usuario hasta el momento:
+    ${profileArgs ? JSON.stringify(profileArgs) : "No se ha podido obtener el perfil del usuario"}
 
     ## Contexto de las preguntas frecuentes:
     ${prompt_faqs_context}
@@ -263,8 +304,11 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     .withStructuredOutput(schema)
     .withConfig({ tags: ["nostream"] });
 
-   
-  const response = await llm.invoke([systemMessageInitial, ...messages]);
+    const messagesWithSummarize = summarize ?  [new AIMessage(summarize), messages.at(-1)] as BaseMessage[] : messages as BaseMessage[];
+
+   console.log(messagesWithSummarize);
+
+  const response = await llm.invoke([systemMessageInitial, ...messagesWithSummarize]);
   console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
   console.log(response);
 
@@ -276,19 +320,24 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   if(response.isFaq) {
     return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
   }
-
+// Resumir la conversacion al momento:
  
+  const summaryConversation = await summarizeConversation(messages);
+  console.log("summaryConversation linee 311 - agent_graph/graph.ts : >>>>>");
+  console.log(summaryConversation);
 
  // Acá ingresa si no encontró respuestas en el contexto de las preguntas frecuentes y el perfil del usuario está completo
 
-  const systemMessage = SYSTEM_PROMPT_PRIMEDIC;
+  const prompt = await buildPrompt({prompt: SYSTEM_PROMPT_PRIMEDIC_v2, summarize: summaryConversation.summary});
+
+  const systemMessage = new SystemMessage(prompt);
 
   // const AIMessageFAQ = isFaqRetriever ? new AIMessage(`contexto para responder la consulta del usuario sugerencia del agente evaluador de FAQS: ${respuestaNumerada}`) : new AIMessage(`No se ha podido obtener respuestas de las preguntas frecuentes para esta consulta, evalúa otras opciones`)
 
   const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
     try {
       console.log("invoke model without fixer");
-      return await model.invoke([systemMessage, ...messages]);
+      return await model.invoke([systemMessage, ...messagesWithSummarize]);
     } catch (err) {
       if (isMissingToolResponseError(err)) {
         const fixed = await ensureToolResponses(messages);
@@ -312,7 +361,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
 
   // OJO: `llm.withStructuredOutput(schema)` devuelve un objeto plano (no un BaseMessage),
   // así que NO se debe devolver en `messages`. En su lugar devolvemos el AIMessage real del modelo.
-  return { messages: [responseEnsureToolResponse], volver_al_menu: false };
+  return { messages: [responseEnsureToolResponse], volver_al_menu: false , summarize: summaryConversation.summary };
 };
 
 // TODO:

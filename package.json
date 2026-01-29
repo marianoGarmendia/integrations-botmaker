@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "npx tsx src/index.ts",
+    "dev": "npx tsx watch src/index.mts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.mjs",
     "tunnel": "ngrok http 3000"

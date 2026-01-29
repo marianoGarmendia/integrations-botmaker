@@ -8,6 +8,13 @@ import { graph } from './graphs/searchDocuments/agent_graph/graph.mjs';
 
 dotenv.config();
 
+process.on("unhandledRejection", (err) => {
+  console.error("[process] unhandledRejection", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[process] uncaughtException", err);
+});
+
 // Memoria simple en proceso para evitar duplicados por usuario
 const MAX_RECENT_IDS = 20;
 const recentMessageIdsByUser = new Map<string, string[]>();
@@ -30,6 +37,17 @@ const PORT = process.env.PORT || 3000;
 app.use(cors())
 
 app.use(express.json());
+
+// Logger simple para ver SIEMPRE qué requests llegan (útil en Railway y local)
+app.use((req, res, next) => {
+  const start = Date.now();
+  console.log(`[HTTP] --> ${req.method} ${req.url}`);
+  res.on("finish", () => {
+    const ms = Date.now() - start;
+    console.log(`[HTTP] <-- ${req.method} ${req.url} ${res.statusCode} (${ms}ms)`);
+  });
+  next();
+});
 // app.use('/api', router);
 app.post('/', (req, res) => {
   console.log('Ruta raíz accedida');
@@ -39,6 +57,10 @@ app.post('/', (req, res) => {
     return res.json({ replyText: " Respuesta del agente LangGraph" });
 
 })
+
+app.get('/health', (_req, res) => {
+  return res.status(200).json({ ok: true });
+});
 
 function assertAuth(req: express.Request) {
   const hdr = req.headers['auth-bm-token'];
@@ -56,6 +78,7 @@ app.post("/botmaker/webhook" , async (req, res) => {
   const body = req.body;
   const {context, TO} = body;
   const customer_id = context.message?.CUSTOMER_ID as string | undefined;
+  console.log("[WEBHOOK] hit /botmaker/webhook");
   console.log("Message inbound --->>>")
   console.log("TO --->>>")
   console.log(body.TO)
@@ -94,6 +117,7 @@ console.log("customer_id --->>>", customer_id)
   if(body.TO === "me"){
     res.status(200)
 console.log("Simulacion invokando al agente langgraph")
+    console.log("[GRAPH] invoke start", { thread_id: customer_id, userMessage });
     const result = await graph.invoke({
       messages: userMessage
     }, {
@@ -101,6 +125,7 @@ console.log("Simulacion invokando al agente langgraph")
         thread_id: customer_id ,
       },
     });
+    console.log("[GRAPH] invoke done", { volver_al_menu: result?.volver_al_menu });
   
 
     // Registrar respuesta enviada por el agente
@@ -116,6 +141,9 @@ console.log("Simulacion invokando al agente langgraph")
     // const responseAgent = result.messages[result.messages.length - 1].content as string
     return res.json({ replyText:result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu  }); // Responder a Botmaker
   }
+
+  console.log("[WEBHOOK] ignorado: TO != 'me'", { TO: body?.TO });
+  return res.status(200).json({ ok: true, ignored: true });
 
  
 
