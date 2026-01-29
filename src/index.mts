@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 // import router from './routes';
 import cors from 'cors';
 
-import { graph } from './graphs/searchDocuments/agent_graph/graph.mjs';
+import { primedicGraph } from './graphs/searchDocuments/agent_graph/graph.mjs';
 
 
 dotenv.config();
@@ -115,10 +115,10 @@ console.log("customer_id --->>>", customer_id)
 
 
   if(body.TO === "me"){
-    res.status(200)
-console.log("Simulacion invokando al agente langgraph")
+   
+    console.log("invokando al agente langgraph")
     console.log("[GRAPH] invoke start", { thread_id: customer_id, userMessage });
-    const result = await graph.invoke({
+    const result = await primedicGraph.invoke({
       messages: userMessage
     }, {
       configurable: {
@@ -139,7 +139,7 @@ console.log("Simulacion invokando al agente langgraph")
     const volver_al_menu = result.volver_al_menu ?? false;
     // console.log(result);
     // const responseAgent = result.messages[result.messages.length - 1].content as string
-    return res.json({ replyText:result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu  }); // Responder a Botmaker
+    return res.json({ replyText:result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu  }).status(200); // Responder a Botmaker
   }
 
   console.log("[WEBHOOK] ignorado: TO != 'me'", { TO: body?.TO });

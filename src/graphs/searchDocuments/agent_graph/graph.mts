@@ -266,14 +266,9 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     
     CONTEXTO CONVERSACIONAL (CLAVE): Debes mirar el ÚLTIMO mensaje del asistente en el historial.
     - Si el último mensaje del asistente fue una pregunta/confirmación/ofrecimiento (ej: "¿querés que te comparta el enlace...?", "¿te lo paso?", "¿querés que lo busque?") y el usuario responde afirmando aunque incluya agradecimiento (ej: "sí gracias", "dale gracias", "ok gracias"), eso NO es una finalización. En ese caso volver_al_menu = false.
-    Tendras una salida estructurada con el siguiente esquema:
+    Tendras una salida estructurada con el esquema provisto:
 
-    {
-    answer: // La respuesta a la pregunta del usuario si la encontraste en el contexto de las preguntas frecuentes
-    question: // La pregunta del usuario
-    isFaq: // Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes
-    volver_al_menu: // Booleano que indica si el usuario desea volver al menu principal
-    }
+
 
     ## información del perfil del usuario hasta el momento:
     ${profileArgs ? JSON.stringify(profileArgs) : "No se ha podido obtener el perfil del usuario"}
@@ -557,4 +552,4 @@ const workflow = new StateGraph(stateAnnotation)
 const memorySaver = new MemorySaver();
 
 // Compilar y usar
-export const graph = workflow.compile({ checkpointer: memorySaver });
+export const primedicGraph = workflow.compile({ checkpointer: memorySaver });
