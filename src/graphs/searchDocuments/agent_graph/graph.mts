@@ -17,7 +17,7 @@ import { tool } from "@langchain/core/tools";
 // import { graph as retrievalGraph } from "../retrieval_graph/graph.mjs";
 // import { createRetrieverTool } from "langchain/tools/retriever";
 // import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { trimMessages, SystemMessage } from "@langchain/core/messages";
+import { trimMessages, SystemMessage, HumanMessage } from "@langchain/core/messages";
 // import {evaluatorChain} from "../evaluation_graph/graph.mjs";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 // import { formatDocumentsAsString } from "langchain/util/document";
@@ -117,10 +117,10 @@ const stateAnnotation = Annotation.Root({
 });
 
 const schema = z.object({
-  isAfiliate: z.boolean(),
-  plan: z.string(),
-  localidad: z.string(),
-  profileIsComplete: z.boolean(),
+  isAfiliate: z.boolean().describe("true si el usuario es afiliado a primedic salud, false si no es afiliado"),
+  plan: z.string().describe("el plan del usuario puede ser b1, elite, plan_a_basic, superior"),
+  localidad: z.string().describe("la localidad del usuario, puede ser la plata, magdalena, chascomus, brandsen, ensenada, etc."),
+  profileIsComplete: z.boolean().describe("true si el perfil del usuario fue completado en los campos isAfiliate, plan y localidad, false si no fue completado"),
  
 });
 const profileTool = tool(
@@ -137,8 +137,8 @@ const profileTool = tool(
     //     localidad: string;
     //   }
 
-    //   ## Contexto de la pregunta del usuario:
-    //   ${query}
+    //   ## En el humanMessage vendra la 'query' del usuario
+      
     //   `)
 
     //   const model = new ChatOpenAI({
@@ -148,13 +148,15 @@ const profileTool = tool(
     //   .withStructuredOutput(schema)
     //   .withConfig({ tags: ["nostream"] });
 
+    //   const response = await model.invoke([systemMessage, new HumanMessage(query)]);
+
 
   
     return { query };
   },
   {
     name: "profile_tool",
-    description: "Obtiene la información del perfil del usuario",
+    description: "Obtiene la información del perfil del usuario en base a los mensajes del usuario",
     schema: schema,
   },
 );
@@ -191,24 +193,29 @@ const toolNode = new ToolNode(tools);
 
 // Definir nodo LLM
 const llmNode = async (state: typeof stateAnnotation.State) => {
-  const { messages } = state;
+  const { messages , profileIsComplete , profile } = state;
+  let profileComplete = false;
 
-// Dtermino esl perfil del usuario
-  const agentProfile = new ChatOpenAI({
-    model: "gpt-5-nano-2025-08-07",
-  
-  })
-  .bindTools([profileTool], { tool_choice: "profile_tool", strict: true })
-  .withConfig({ tags: ["nostream"] });
+  if(!profileIsComplete) {
+    
+    // Dtermino esl perfil del usuario
+      const agentProfile = new ChatOpenAI({
+        model: "gpt-4o",
+        temperature: 0.2,
+      })
+      .bindTools([profileTool], { tool_choice: "profile_tool", strict: true })
+      .withConfig({ tags: ["nostream"] });
+    
+      const responseAgentProfile = await agentProfile.invoke([systemMessageProfile, ...messages]);
+      
+      const toolArgs = responseAgentProfile.tool_calls?.[0]?.args;
+      console.log("toolArgs linee 242 - agent_graph/graph.ts : >>>>>");
+      console.log(toolArgs);
 
-  const responseAgentProfile = await agentProfile.invoke([systemMessageProfile, ...messages]);
-  console.log("responseAgentProfile linee 226 - agent_graph/graph.ts : >>>>>");
-  // console.log(responseAgentProfile);
-  const toolArgs = responseAgentProfile.tool_calls?.[0]?.args;
-  console.log("toolArgs linee 242 - agent_graph/graph.ts : >>>>>");
-  // console.log(toolArgs);
 
-  const profileComplete = toolArgs?.profileIsComplete;
+      profileComplete = toolArgs?.profileIsComplete;
+  }
+
 
 
 
@@ -251,66 +258,28 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   });
 
   const llm = new ChatOpenAI({
-    model: "gpt-5-nano-2025-08-07",
-   
+    model: "gpt-4o",
   })
     .withStructuredOutput(schema)
     .withConfig({ tags: ["nostream"] });
 
-    // trimeed messages unused for now
-  const trimmed = await trimMessages(messages, {
-    // Keep the last <= n_count tokens of the messages.
-    strategy: "last",
-    // Remember to adjust based on your model
-    // or else pass a custom token_encoder
-    tokenCounter: new ChatOpenAI({ modelName: "gpt-4o" }),
-    // Remember to adjust based on the desired conversation
-    // length
-    maxTokens: 45,
-    // Most chat models expect that chat history starts with either:
-    // (1) a HumanMessage or
-    // (2) a SystemMessage followed by a HumanMessage
-    startOn: "human",
-    // Most chat models expect that chat history ends with either:
-    // (1) a HumanMessage or
-    // (2) a ToolMessage
-    endOn: ["human", "tool"],
-    // Usually, we want to keep the SystemMessage
-    // if it's present in the original history.
-    // The SystemMessage has special instructions for the model.
-    includeSystem: true,
-  });
-
+   
   const response = await llm.invoke([systemMessageInitial, ...messages]);
   console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
   console.log(response);
 
+  
   if(response.volver_al_menu) {
     return { messages: [new AIMessage("")], volver_al_menu: true };
   }
 
-  if(response.isFaq && profileComplete) {
+  if(response.isFaq) {
     return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
   }
 
-  // return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
+ 
 
-
-
-  console.log("trimmed linee 114 - agent_graph/graph.ts : >>>>>");
-  console.log(trimmed);
-
-  // return { messages: new AIMessage(`En este momento estamos configurando el asistente... `) };
-
-  // const evaluatorResponse = await invokeWithBackoff(5, () =>
-  //   evaluatorChain.invoke({
-  //     question: messages[messages.length - 1].content
-  //   })
-  // )
-  // console.log("evaluatorResponse linee 111 - agent_graph/graph.ts : >>>>>")
-  // console.log(evaluatorResponse)
-
-  // const systemMessage = isFaqRetriever ? createPrimedicSystemPrompt({faqData: evaluatorResponse.isFaq}) : createPrimedicSystemPrompt({faqData: false})
+ // Acá ingresa si no encontró respuestas en el contexto de las preguntas frecuentes y el perfil del usuario está completo
 
   const systemMessage = SYSTEM_PROMPT_PRIMEDIC;
 
@@ -319,7 +288,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
     try {
       console.log("invoke model without fixer");
-      return await model.invoke([systemMessage, ...trimmed]);
+      return await model.invoke([systemMessage, ...messages]);
     } catch (err) {
       if (isMissingToolResponseError(err)) {
         const fixed = await ensureToolResponses(messages);
