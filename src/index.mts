@@ -54,7 +54,7 @@ app.post('/', (req, res) => {
   console.log(req.body);
   console.log(req.url);
 
-    return res.json({ replyText: " Respuesta del agente LangGraph" });
+  return res.json({ replyText: " Respuesta del agente LangGraph" });
 
 })
 
@@ -72,87 +72,87 @@ function assertAuth(req: express.Request) {
 
 
 
-app.post("/botmaker/webhook" , async (req, res) => {
- try {
-  // assertAuth(req);
-  const body = req.body;
-  const {context, TO} = body;
-  const customer_id = context.message?.CUSTOMER_ID as string | undefined;
-  console.log("[WEBHOOK] hit /botmaker/webhook");
-  console.log("Message inbound --->>>")
-  console.log("TO --->>>")
-  console.log(body.TO)
-  console.log("message --->>>")
-  console.log(body.message)
-  console.log(body.userMessage)
-  const id = body.userData._id_ as string
-  const userMessage = body.userMessage.includes("button") ? "te quiero hacer una consulta" : body.userMessage
-console.log("customer_id --->>>", customer_id)
+app.post("/botmaker/webhook", async (req, res) => {
+  try {
+    // assertAuth(req);
+    const body = req.body;
+    const { context, TO } = body;
+    const customer_id = context.message?.CUSTOMER_ID as string | undefined;
+    console.log("[WEBHOOK] hit /botmaker/webhook");
+    console.log("Body completo --->>>")
+    console.log(body)
+    const id = body.userData._id_ as string
+    const userMessage = body.userMessage.includes("button") ? "te quiero hacer una consulta" : body.userMessage
+    console.log("customer_id --->>>", customer_id)
 
-  // Chequeo de inactividad (5 minutos) por customer_id
-  if (customer_id) {
-    const now = Date.now();
-    const lastAt = lastCustomerMessageAt.get(customer_id) ?? 0;
-    if (lastAt && (now - lastAt) > 5 * 60 * 1000) {
-      // actualizar timestamp y cortar con redirección al menú
-      lastCustomerMessageAt.set(customer_id, now);
-      return res.status(200).json({ replyText: "Redirigiendo al menu principal" , agent_is_speak: false });
-    }
-    // actualizar timestamp de último mensaje del cliente
-    lastCustomerMessageAt.set(customer_id, now);
-  }
-
-  // Corte temprano si alcanzó el máximo de respuestas
-  if (customer_id) {
-    
-    const prevCount = customerReplyCounts.get(customer_id) ?? 0;
-    console.log("mensajes del agente al usuario --->>>", prevCount)
-    if (prevCount >= MAX_AGENT_REPLIES) {
-      return res.status(200).json({ replyText: "Para mas informacion puedes volver al menu principal, solo di 'ok' para volver al menu principal", agent_is_speak: false });
-    }
-  }
-
-
-
-  if(body.TO === "me"){
-   
-    console.log("invokando al agente langgraph")
-    console.log("[GRAPH] invoke start", { thread_id: customer_id, userMessage });
-    const result = await primedicGraph.invoke({
-      messages: userMessage
-    }, {
-      configurable: {
-        thread_id: customer_id ,
-      },
-    });
-    console.log("[GRAPH] invoke done", { volver_al_menu: result?.volver_al_menu });
-  
-
-    // Registrar respuesta enviada por el agente
+    // Chequeo de inactividad (5 minutos) por customer_id
     if (customer_id) {
-      const prevCount = customerReplyCounts.get(customer_id) ?? 0;
-      customerReplyCounts.set(customer_id, prevCount + 1);
+      const now = Date.now();
+      const lastAt = lastCustomerMessageAt.get(customer_id) ?? 0;
+      if (lastAt && (now - lastAt) > 5 * 60 * 1000) {
+        // actualizar timestamp y cortar con redirección al menú
+        lastCustomerMessageAt.set(customer_id, now);
+        return res.status(200).json({ replyText: "Redirigiendo al menu principal", agent_is_speak: false });
+      }
+      // actualizar timestamp de último mensaje del cliente
+      lastCustomerMessageAt.set(customer_id, now);
     }
 
-   
-    console.log("result linee 72 - index.ts : >>>>>");
-    const volver_al_menu = result.volver_al_menu ?? false;
-    // console.log(result);
-    // const responseAgent = result.messages[result.messages.length - 1].content as string
-    return res.json({ replyText:result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu  }).status(200); // Responder a Botmaker
+    // Corte temprano si alcanzó el máximo de respuestas
+    if (customer_id) {
+
+      const prevCount = customerReplyCounts.get(customer_id) ?? 0;
+      console.log("mensajes del agente al usuario --->>>", prevCount)
+      if (prevCount >= MAX_AGENT_REPLIES) {
+        return res.status(200).json({ replyText: "Para mas informacion puedes volver al menu principal, solo di 'ok' para volver al menu principal", agent_is_speak: false });
+      }
+    }
+
+
+
+    if (body.TO === "me") {
+
+      // Descomentar en prod
+      // console.log("invokando al agente langgraph")
+      // console.log("[GRAPH] invoke start", { thread_id: customer_id, userMessage });
+      // const result = await primedicGraph.invoke({
+      //   messages: userMessage
+      // }, {
+      //   configurable: {
+      //     thread_id: customer_id,
+      //   },
+      // });
+      // console.log("[GRAPH] invoke done", { volver_al_menu: result?.volver_al_menu });
+
+
+      // Registrar respuesta enviada por el agente
+      if (customer_id) {
+        const prevCount = customerReplyCounts.get(customer_id) ?? 0;
+        customerReplyCounts.set(customer_id, prevCount + 1);
+      }
+
+
+      console.log("result linee 72 - index.ts : >>>>>");
+      // const volver_al_menu = result.volver_al_menu ?? false;
+      // // console.log(result);
+      // // const responseAgent = result.messages[result.messages.length - 1].content as string
+      // return res.json({ replyText: result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu }).status(200); // Responder a Botmaker
+
+      // TEST: probar gotoRule estático
+      return res.json({ replyText: "Derivando a Autorizaciones...", agent_is_speak: false, gotoRule: "Prestadores" }).status(200);
+    }
+
+    console.log("[WEBHOOK] ignorado: TO != 'me'", { TO: body?.TO });
+    return res.status(200)
+
+
+
+
+
+  } catch (err) {
+    console.error(err);
+    return res.status(200).json({ ok: true, error: true });
   }
-
-  console.log("[WEBHOOK] ignorado: TO != 'me'", { TO: body?.TO });
-  return res.status(200).json({ ok: true, ignored: true });
-
- 
-
-
-
- } catch (err) {
-  console.error(err);
-  return res.status(200).json({ ok: true, error: true });
- }
 })
 
 app.listen(PORT, () => {

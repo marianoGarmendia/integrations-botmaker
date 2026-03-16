@@ -17,7 +17,7 @@ import { tool } from "@langchain/core/tools";
 // import { graph as retrievalGraph } from "../retrieval_graph/graph.mjs";
 // import { createRetrieverTool } from "langchain/tools/retriever";
 // import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { trimMessages, SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { trimMessages, SystemMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 // import {evaluatorChain} from "../evaluation_graph/graph.mjs";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 // import { formatDocumentsAsString } from "langchain/util/document";
@@ -50,26 +50,6 @@ dotenv.config();
 
 // TODO: trim de mensajes para evitar que el estado se haga muy grande
 //https://chatgpt.com/c/68c446cc-e44c-8331-aa05-e9aab954d760 [como hacerlo]
-
-// const retrieverTool = tool(
-//   async ({query}:{query: string})=>{
-//     try{
-// const responseRetrieval = await retrievalGraph.invoke({query: query})
-// return responseRetrieval
-//     }catch(error){
-//       console.log("error in retrieverTool: ", error)
-//       return "No se pudo obtener la información de los documentos"
-//     }
-
-//   },{
-
-//     name: "retriever_tool",
-//     description: "Recupera documentos y responde sobre cartilla de profesionales, farmacias disponibles, odontología, especialidades médicas, prestadores, telefonos de profesionales, de clinicas, psicologos y todo lo que no encuentra en el contexto disponible a la hora de responder la consulta del usuario, por eso ésta herrameinta debe llamarse cuando no encuetra la respuesta en el contexto disponible",
-//     schema: z.object({
-//       query: z.string().describe("La query del usuario, conformada de manera tal que genere una búsqueda vectorial efectiva"),
-//     }),
-//   }
-// )
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -110,7 +90,10 @@ const stateAnnotation = Annotation.Root({
     plan: string;
     localidad: string;
   }>,
-  profileIsComplete: Annotation<boolean>,
+  profileIsComplete: Annotation<boolean>({
+    value: (_prev, next) => next,
+    default: () => false,
+  }),
   volver_al_menu: Annotation<boolean>({
     value: (_prev, next) => next, // último valor gana
     default: () => false,
@@ -123,37 +106,10 @@ const schema = z.object({
   plan: z.string().describe("el plan del usuario puede ser b1, elite, plan_a_basic, superior"),
   localidad: z.string().describe("la localidad del usuario, puede ser la plata, magdalena, chascomus, brandsen, ensenada, etc."),
   profileIsComplete: z.boolean().describe("true si el perfil del usuario fue completado en los campos isAfiliate, plan y localidad, false si no fue completado"),
- 
+
 });
 const profileTool = tool(
   async ({ query }: { query: string }) => {
-
-
-    // const systemMessage = new SystemMessage(`
-    //   Eres asistente de primedic salud, una obra social de la plata, magdalena, chascomus y brandsen.
-    //    Eres encargado de determinar el perfil del usuario para poder responderle mejor.
-    //   Tendras una salida estructurada con el siguiente esquema:
-    //   {
-    //     isAfiliate: boolean;
-    //     plan: string;
-    //     localidad: string;
-    //   }
-
-    //   ## En el humanMessage vendra la 'query' del usuario
-      
-    //   `)
-
-    //   const model = new ChatOpenAI({
-    //     model: "gpt-4o",
-    //     temperature: 0,
-    //   })
-    //   .withStructuredOutput(schema)
-    //   .withConfig({ tags: ["nostream"] });
-
-    //   const response = await model.invoke([systemMessage, new HumanMessage(query)]);
-
-
-  
     return { query };
   },
   {
@@ -164,7 +120,7 @@ const profileTool = tool(
 );
 
 // Lista de herramientas
-const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool, cartillasTools];
+const tools = [ PlansToolRetriever, cartillasTools];
 
  const systemMessageProfile = new SystemMessage(`
       Eres asistente de primedic salud, una obra social de la plata, magdalena, chascomus y brandsen.
@@ -177,7 +133,7 @@ const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool, cartillasTool
       }
 
       ## Contexto de la pregunta del usuario:
-   
+
       `)
 
 
@@ -185,7 +141,7 @@ const tools = [FaqsToolRetriever, PlansToolRetriever, profileTool, cartillasTool
 const model = new ChatOpenAI({
   model: "gpt-4o",
   apiKey: process.env.OPENAI_API_KEY ,
- 
+
 })
   .bindTools(tools)
   .withConfig({ tags: ["nostream"] });
@@ -203,7 +159,7 @@ const summarizeConversation = async (messages: BaseMessage[]) => {
 
     ## Lista de mensajes de la conversacion:
     ${messages.map((message) => message.content).join("\n")}
-    
+
   `);
 
   const llm = new ChatOpenAI({
@@ -223,18 +179,18 @@ const buildPrompt = async ({prompt, summarize}: {prompt: string, summarize: stri
 
   ## Resumen de la conversacion al momento:
   ${summarize}
-  
+
   `
 }
 
-// Definir nodo LLM
+// Definir nodo LLM (mantenido aunque no esté conectado al grafo)
 const llmNode = async (state: typeof stateAnnotation.State) => {
   const { messages , profileIsComplete , summarize } = state;
   let profileComplete = false;
   let profileArgs = {} as any;
 
   if(!profileIsComplete) {
-    
+
     // Dtermino esl perfil del usuario
       const agentProfile = new ChatOpenAI({
         model: "gpt-4o",
@@ -242,9 +198,9 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
       })
       .bindTools([profileTool], { tool_choice: "profile_tool", strict: true })
       .withConfig({ tags: ["nostream"] });
-    
+
       const responseAgentProfile = await agentProfile.invoke([systemMessageProfile, ...messages]);
-      
+
       const toolArgs = responseAgentProfile.tool_calls?.[0]?.args;
       console.log("toolArgs linee 242 - agent_graph/graph.ts : >>>>>");
       console.log(toolArgs);
@@ -253,17 +209,17 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
       profileComplete = toolArgs?.profileIsComplete;
       profileArgs = toolArgs;
   }
-
+// Primedia : nombre del agente
 
 
 
   const systemMessageInitial = new SystemMessage(`
     Eres un asistente inteligente y tu tarea es identificar si la pregunta del usuario puede ser respondida con la información disponible en el contexto dentro de las preguntas frecuentes.
     También debes detectar si el usuario desea volver al menú principal.
-    
+
     IMPORTANTE: Si el usuario responde con un mensaje de cierre/despedida/agradecimiento FINAL (por ejemplo: "gracias", "muchas gracias", "bueno gracias", "listo gracias", "ok gracias", "chau", "hasta luego", "nos vemos") y NO incluye una nueva pregunta/pedido (ej: no agrega "y ...", no pregunta algo, no solicita otra cosa), entonces debes marcar volver_al_menu = true.
     Si el usuario agradece pero además hace una nueva consulta (ej: "gracias, y dónde queda?", "gracias, pero necesito otra cosa"), entonces volver_al_menu = false.
-    
+
     CONTEXTO CONVERSACIONAL (CLAVE): Debes mirar el ÚLTIMO mensaje del asistente en el historial.
     - Si el último mensaje del asistente fue una pregunta/confirmación/ofrecimiento (ej: "¿querés que te comparta el enlace...?", "¿te lo paso?", "¿querés que lo busque?") y el usuario responde afirmando aunque incluya agradecimiento (ej: "sí gracias", "dale gracias", "ok gracias"), eso NO es una finalización. En ese caso volver_al_menu = false.
     Tendras una salida estructurada con el esquema provisto:
@@ -307,7 +263,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
   console.log(response);
 
-  
+
   if(response.volver_al_menu) {
     return { messages: [new AIMessage("")], volver_al_menu: true };
   }
@@ -316,7 +272,7 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     return { messages: [new AIMessage(response.answer)] , volver_al_menu: false };
   }
 // Resumir la conversacion al momento:
- 
+
   const summaryConversation = await summarizeConversation(messages);
   console.log("summaryConversation linee 311 - agent_graph/graph.ts : >>>>>");
   console.log(summaryConversation);
@@ -326,8 +282,6 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
   const prompt = await buildPrompt({prompt: SYSTEM_PROMPT_PRIMEDIC_v2, summarize: summaryConversation.summary});
 
   const systemMessage = new SystemMessage(prompt);
-
-  // const AIMessageFAQ = isFaqRetriever ? new AIMessage(`contexto para responder la consulta del usuario sugerencia del agente evaluador de FAQS: ${respuestaNumerada}`) : new AIMessage(`No se ha podido obtener respuestas de las preguntas frecuentes para esta consulta, evalúa otras opciones`)
 
   const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
     try {
@@ -343,193 +297,250 @@ const llmNode = async (state: typeof stateAnnotation.State) => {
     }
   });
 
-  // const response = await model.invoke([systemMessage, new AIMessage(`Sugerencia de respuesta del agente evaluador de FAQS: ${evaluatorResponse.answer}`),...messages ]);
 
-  // console.log(
-  //   "retriever_node_response linee 134 - agent_graph/graph.ts : >>>>>",
-  // );
-  // console.log(retriever_node_response);
-  // console.log(
-  //   "responseEnsureToolResponse linee 136 - agent_graph/graph.ts : >>>>>",
-  // );
+
   console.log(responseEnsureToolResponse);
 
-  // OJO: `llm.withStructuredOutput(schema)` devuelve un objeto plano (no un BaseMessage),
-  // así que NO se debe devolver en `messages`. En su lugar devolvemos el AIMessage real del modelo.
   return { messages: [responseEnsureToolResponse], volver_al_menu: false , summarize: summaryConversation.summary };
 };
 
-// TODO:
-/*
-- Entrar en el nodo FaqRetriever
-- intentar responder la pregunta del usuario con las preguntas frecuentes.
-- si la respuesta fue encontrada en el contexto de las preguntas frecuentes, retornar la respuesta y la pregunta y el booleano isFaq = true
-- si la respuesta no fue encontrada en el contexto de las preguntas frecuentes, retornar la respuesta y la pregunta y el booleano isFaq = false
+// Schema para firstNode: clasifica la consulta Y extrae el perfil en una sola llamada
+const schemaFirstNode = z.object({
+  needsProfile: z.boolean().describe("true si es consulta de cartilla, prestadores, búsqueda de médicos/especialistas/farmacias o cobertura específica por plan/localidad. false para preguntas generales (horarios, contacto, qué es Primedic, FAQs generales)"),
+  hasRealQuery: z.boolean().describe("true si en la conversación el usuario hizo una pregunta o consulta real sobre el servicio (ej: buscar médico, cartilla, cobertura, farmacias). false si el usuario SOLO está aportando datos de perfil (ej: 'soy afiliado', 'vivo en la plata', 'plan elite') sin haber hecho ninguna consulta todavía"),
+  isAfiliate: z.boolean().nullable().describe("true si el usuario es afiliado a Primedic Salud, false si es prospecto, null si no se menciona en la conversación"),
+  plan: z.string().nullable().describe("plan del usuario: b1, elite, plan_a_basic, superior. null si no se menciona"),
+  localidad: z.string().nullable().describe("localidad del usuario: la plata, magdalena, chascomus, brandsen, ensenada, berisso, etc. null si no se menciona"),
+  questionForUser: z.string().nullable().describe("Pregunta concisa y amigable al usuario para obtener TODOS los datos faltantes en un solo mensaje. null si no se necesita perfil o ya está completo"),
+});
 
-// */
-// const retriever_schema = z.object({
-//   retriever_node_response: z.array(z.object({
-//     isFaq: z.boolean().describe("Si la respuesta fue encontrada en el contexto de las preguntas frecuentes"),
-//     answer: z.string().describe("La respuesta a la pregunta del usuario"),
-//     question: z.string().describe("La pregunta del usuario"),
-//   }))
-// })
+const firstNode = async (state: typeof stateAnnotation.State) => {
+  const { profile, messages } = state;
 
-// 4) Prompt + cadena RAG
-// const prompt = PromptTemplate.fromTemplate(`
-//   Usa estrictamente el contexto para responder la pregunta.
-//   Responde conciso y al esquema de la respuesta los valores correspondientes:
+  // Solo saltear si tenemos los 3 campos reales del perfil — NO basarse en el flag profileIsComplete
+  // porque ese flag puede estar en true por una consulta anterior que no requería perfil
+  const hasCompleteProfile =
+    profile != null &&
+    profile.isAfiliate != null &&
+    profile.plan != null &&
+    profile.localidad != null;
 
-//   # Pregunta
-//   {question}
+  if (hasCompleteProfile) return { profileIsComplete: true };
 
-//   # Contexto
-//   {context}
-//   `);
+  const systemPromptFirstNode = new SystemMessage(`Sos asistente de Primedic Salud. Analizá el HISTORIAL COMPLETO de la conversación y completá el esquema de salida estructurada.
 
-//   const otherAnnotation = Annotation.Root({
-//     retriever_node_response:  Annotation<Record<string, any>>(),
-//     isFaqRetriever: Annotation<boolean>({
-//       value: (_prev, next) => next, // último valor gana
-//       default: () => false,
-//     }),
-//     respuestaNumerada: Annotation<string>({
-//       value: (_prev, next) => next, // último valor gana
-//       default: () => "",
-//     })
-//   })
+PASO 1 – CLASIFICÁ si la conversación requiere conocer el perfil del usuario (plan + localidad + afiliación).
+La MAYORÍA de las consultas operativas requieren perfil. Usá la siguiente guía:
 
-// const mergeAnnotation = Annotation.Root({
-//   ...stateAnnotation.spec,
-// });
-// type NodeResp = { isFaq: boolean; answer: string; question: string };
-// type Wrapper = { retriever_node_response: NodeResp[] };
+needsProfile = TRUE para cualquiera de estos temas:
+- Cartilla de prestadores, médicos, especialistas, farmacias, clínicas, laboratorios
+- Cobertura de prácticas, estudios, tratamientos, cirugías
+- Autorizaciones de estudios o prácticas médicas (el proceso puede variar por plan y localidad)
+- Reintegros, medicamentos crónicos, incorporación de adherentes
+- Turnos en CIM u otras instituciones
+- Credenciales o estado de afiliación
+- Cualquier consulta donde el plan o la localidad del usuario afecte la respuesta
 
-// const FaqRetrieverNode = async (state: typeof mergeAnnotation.State , config: LangGraphRunnableConfig) => {
-//   const {messages, isFaqRetriever} = state
-//   console.log("isFaq linee 153 - agent_graph/graph.ts : >>>>>")
-//   console.log(isFaqRetriever)
-//   const lastMessage = messages[messages.length - 1] as HumanMessage
-//   console.log("lastMessage linee 202 - agent_graph/graph.ts : >>>>>")
-//   console.log(lastMessage)
-//   const questionMessage = lastMessage.text
-//   const questionMessageExtracted = extractText(lastMessage)
-//   console.log("questionMessage linee 206 - agent_graph/graph.ts : >>>>>")
-//   console.log(questionMessage)
-//   // TODO: este filtro principal deberia ser dinamico, es decir, psaarle dinamicamente los documentos FAQS al principio.
-//   // 3) Modelo y structured output
+needsProfile = FALSE SOLO para consultas completamente genéricas que aplican igual para todos:
+- Horario y dirección de la oficina central
+- Teléfono de SIPEM (emergencias)
+- Qué es Primedic Salud o cómo afiliarse (prospecto sin plan)
 
-// const model = new ChatOpenAI({
-//   model: "gpt-4o",
-//   temperature: 0.2
+TAMBIÉN marcá needsProfile=true si el asistente ya le pidió los datos al usuario en mensajes anteriores (indica que la consulta original los requería).
 
-// }).withStructuredOutput(retriever_schema).withConfig({tags: ["nostream"]});
+PASO 2 – DETERMINÁ si el usuario ya hizo una consulta/pregunta real sobre el servicio (hasRealQuery).
+- hasRealQuery=true: el usuario preguntó algo concreto (ej: "busco un cardiólogo", "cómo autorizo un estudio", "qué farmacias tengo")
+- hasRealQuery=false: el usuario SOLO aportó datos de perfil (ej: "soy afiliado", "vivo en la plata", "plan elite") sin hacer ninguna pregunta todavía
 
-// const docsTitles = await getDocsTitlesOfSupabase()
+PASO 3 – EXTRAÉ del historial los datos que ya haya mencionado el usuario: isAfiliate, plan, localidad. Si no se mencionan, dejá el campo en null.
 
-// const resultMap = docsTitles.map(async (title) => {
+PASO 4 – Si needsProfile=true y aún faltan datos (algún campo es null), escribí UNA pregunta amigable y concisa pidiendo TODOS los datos faltantes juntos en un solo mensaje. Si no se necesita perfil o el perfil ya está completo, dejá questionForUser en null.`);
 
-//   const retriever = await makeRetriever(config, {title: title})
+  const llmFirstNode = new ChatOpenAI({
+    model: "gpt-4o",
+    temperature: 0,
+  })
+    .withStructuredOutput(schemaFirstNode)
+    .withConfig({ tags: ["nostream"] });
 
-//   const formatDocs = async (docs: any[]) =>{
-//     console.log("docs linee 222 - agent_graph/graph.ts : >>>>>")
-//     // console.log(docs)
-//     // console.log("after docs >>>>>")
-//       const context = formatDocumentsAsString(docs)
-//       // console.log("context linee 209 - agent_graph/graph.ts : >>>>>")
-//       // // console.log(context)
-//       // console.log("after context >>>>>")
-//       return context
-//   }
+  const result = await llmFirstNode.invoke([systemPromptFirstNode, ...messages]);
+  console.log("firstNode result - agent_graph/graph.ts : >>>>>");
+  console.log(result);
 
-//    const ragStructured = RunnableSequence.from([
-//     {
-//       question: new RunnablePassthrough(),
-//       contextDocs: retriever // retriever.invoke(question) -> Document[]
-//     },
-//     async ({ question, contextDocs }) => ({
-//       question,
-//       context: await formatDocs(contextDocs)
-//     }),
-//     prompt,
-//     model // <-- devuelve JSON ya validado por Zod
-//   ]);
+  // El LLM a veces devuelve el string "null" en vez de null real — normalizar
+  const nullify = (v: string | null | undefined): string | null =>
+    v == null || v === "null" || v === "" ? null : v;
 
-//   const result = await ragStructured.invoke(questionMessageExtracted);
+  const plan = nullify(result.plan);
+  const localidad = nullify(result.localidad);
+  const isAfiliate = result.isAfiliate;
 
-//   // console.dir(result, {depth: null})
-//   return result
-// })
-// const wrappers: Wrapper[] = await Promise.all(resultMap);
+  const profileComplete =
+    !result.needsProfile ||
+    (isAfiliate !== null && plan !== null && localidad !== null);
 
-// // Aplano todas las respuestas y me quedo solo con las FAQ
-// const onlyFaq: NodeResp[] = wrappers
-//   .flatMap(w => w.retriever_node_response)
-//   .filter(item => item.isFaq);
+  if (profileComplete) {
+    if (result.needsProfile) {
+      if (!result.hasRealQuery) {
+        // Perfil completo pero el usuario aún no hizo su consulta real
+        // Guardar el perfil, pedir la consulta y terminar el turno (→ END)
+        return {
+          profile: {
+            isAfiliate: isAfiliate!,
+            plan: plan!,
+            localidad: localidad!,
+          },
+          messages: [new AIMessage("¡Perfecto! Ya tengo tu información. ¿En qué puedo ayudarte hoy?")],
+          profileIsComplete: false,
+        };
+      }
+      return {
+        profileIsComplete: true,
+        profile: {
+          isAfiliate: isAfiliate!,
+          plan: plan!,
+          localidad: localidad!,
+        },
+      };
+    }
+    return { profileIsComplete: true };
+  }
 
-//   console.log("onlyFaq linee 260 - agent_graph/graph.ts : >>>>>")
-//   // console.dir(onlyFaq, {depth: null})
+  // Perfil necesario pero incompleto — preguntar al usuario y terminar el turno
+  return {
+    messages: [new AIMessage(result.questionForUser!)],
+    profileIsComplete: false,
+  };
+};
 
-// // Ejemplo: solo las answers
-// const faqAnswers = onlyFaq.map(i => i.answer);
+const routeAfterFirstNode = (state: typeof stateAnnotation.State) => {
+  return state.profileIsComplete ? "secondNode" : END;
+};
 
-//     console.log("faqAnswers linee 266 - agent_graph/graph.ts : >>>>>")
-//     console.dir(faqAnswers, {depth: null})
+const secondNode = async (state: typeof stateAnnotation.State) => {
+  const { messages, profile } = state;
 
-// // numeradas
-// const respuestaNumerada = faqAnswers.length > 0 && faqAnswers
-//   .filter(Boolean)
-//   .map((s, i) => `${i + 1}. ${s.trim()}`)
-//   .join("\n");
+  // Si venimos de ejecutar tools, saltear el FAQ check — los mensajes ya incluyen
+  // el resultado de la tool y solo necesitamos que el modelo sintetice la respuesta
+  const comingFromTools = messages[messages.length - 1] instanceof ToolMessage;
 
-//   return { retriever_node_response: {} , isFaqRetriever: onlyFaq.length > 0 , respuestaNumerada: respuestaNumerada };
-// }
+  if (!comingFromTools) {
+    // Construir query enriquecida con perfil para que el retriever filtre mejor
+    const lastHumanMessage = messages.filter(m => m.type === "human").at(-1);
+    const baseQuery = String(lastHumanMessage?.content ?? "");
+    const faqQuery = profile
+      ? `${baseQuery} - plan: ${profile.plan}, localidad: ${profile.localidad}`
+      : baseQuery;
 
-// const firstNode = async (state: typeof stateAnnotation.State) => {
-//   const { messages } = state;
-//   const systemMessage = new SystemMessage(`
-//     Eres un asistente inteligente y tu tarea es identificar si la pregunta del usuario puede ser respondida con la inforamcion disponible en el contexto dentro de las preguntas frecuentes.
+    // Buscar en FAQs usando la tool de retrieval (en vez de contexto hardcodeado en el prompt)
+    let faqContext = "";
+    try {
+      const faqRaw = await FaqsToolRetriever.invoke({ query: faqQuery });
+      const faqResult = typeof faqRaw === "string" ? faqRaw : JSON.stringify(faqRaw);
+      if (faqResult.trim().length > 50) {
+        faqContext = faqResult;
+      }
+    } catch (err) {
+      console.error("Error al consultar FaqsToolRetriever:", err);
+    }
+    console.log("faqContext length:", faqContext.length);
 
-//     Antes de cualquier respuesta, debes:
+    const profileContext = profile
+      ? `Perfil del usuario: isAfiliate=${profile.isAfiliate}, plan=${profile.plan}, localidad=${profile.localidad}`
+      : "No se requiere perfil para esta consulta";
 
+    const systemMessageInitial = new SystemMessage(`
+    Eres un asistente de Primedic Salud que atiende por WhatsApp dentro de un flujo con múltiples opciones (autorizaciones, prestadores, centro médico, ayudas económicas, etc.).
+    Tu tarea es identificar si la pregunta del usuario puede ser respondida con los documentos recuperados del sistema de FAQs.
+    También debes detectar si el usuario desea volver al menú principal o acceder a otra opción del flujo.
 
+    REGLA DE CIERRE / DERIVACIÓN AL MENÚ:
+    Marcá volver_al_menu = true cuando:
+    - El usuario se despide o agradece sin nueva consulta (ej: "gracias", "chau", "hasta luego", "listo gracias").
+    - El usuario pide explícitamente volver al menú o acceder a otra opción (ej: "quiero ver autorizaciones", "menú", "otras opciones", "volver").
+    - El asistente le sugirió al usuario volver al menú y el usuario acepta o confirma (ej: "ok", "dale", "sí").
+    Marcá volver_al_menu = false si el usuario agradece pero además hace una nueva consulta (ej: "gracias, y dónde queda?").
 
-//     Tendras una salida estructurada con el siguiente esquema:
+    CONTEXTO CONVERSACIONAL (CLAVE): Si el último mensaje del asistente fue una pregunta/ofrecimiento y el usuario responde afirmando ("sí gracias", "dale"), NO es una finalización → volver_al_menu = false.
 
-//     {
-//     answer: // La respuesta a la pregunta del usuario si la encontraste en el contexto de las preguntas frecuentes
-//     question: // La pregunta del usuario
-//     isFaq: // Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes
-//     }
+    REGLA IMPORTANTE: Si los documentos recuperados no responden la consulta (isFaq=false), NO sugieras números de teléfono ni ir a la sucursal. En cambio, indicá brevemente que esta consulta no podés resolverla desde este módulo y sugerí al usuario que vuelva al menú principal para seleccionar la opción adecuada. La única excepción es urgencias médicas → SIPEM 221-451-3145.
 
-//     `);
+    Tendras una salida estructurada con el esquema provisto:
 
-//   const schema = z.object({
-//     answer: z
-//       .string()
-//       .describe(
-//         "La respuesta a la pregunta del usuario si la encontraste en el contexto de las preguntas frecuentes",
-//       ),
-//     question: z.string().describe("La pregunta del usuario"),
-//     isFaq: z
-//       .boolean()
-//       .describe(
-//         "Booleano que indica si la pregunta fue encontrada en el contexto de las preguntas frecuentes",
-//       ),
-//   });
+    ## Perfil del usuario:
+    ${profileContext}
 
-//   const llm = new ChatOpenAI({
-//     model: "gpt-4o",
-//     temperature: 0,
-//   })
-//     .withStructuredOutput(schema)
-//     .withConfig({ tags: ["nostream"] });
+    ## Documentos recuperados del sistema de FAQs (usá SOLO esta información para responder en caso de haya información provista):
+    ${faqContext || "No se recuperaron documentos relevantes para esta consulta."}
+    `);
 
-//   const response = await llm.invoke([systemMessage, ...messages]);
-//   console.log("response linee 346 - agent_graph/graph.ts : >>>>>");
-//   console.log(response);
-//   return { firstNodeResponse: [response], isFaq: response.isFaq };
-// };
+    const schemaSecondNode = z.object({
+      answer: z
+        .string()
+        .describe(
+          "Respuesta positiva y específica basada ÚNICAMENTE en los documentos recuperados. Si los documentos NO contienen el dato concreto que pide el usuario (ej: nombre de un profesional, dirección específica), dejá este campo vacío ('') y marcá isFaq=false. NUNCA pongas respuestas del tipo 'Lo siento, no tengo información' — eso es isFaq=false, no una respuesta.",
+        ),
+      question: z.string().describe("La pregunta del usuario"),
+      isFaq: z
+        .boolean()
+        .describe(
+          "true SOLO si los documentos recuperados contienen la respuesta concreta y útil para el usuario (datos reales: nombre, dirección, teléfono, cobertura, etc.). false si: los documentos no tienen el dato, no encontraste al profesional/prestador buscado, o la respuesta sería 'no tengo información'. En caso de duda, marcá false para que otra herramienta busque.",
+        ),
+      volver_al_menu: z.boolean().describe("true si: (1) el usuario se despide/agradece sin nueva consulta, (2) pide volver al menú o acceder a otra opción del flujo (autorizaciones, prestadores, etc.), o (3) el asistente le sugirió volver al menú y el usuario acepta. false si el usuario agradece pero además hace una nueva consulta."),
+    });
+
+    const llm = new ChatOpenAI({
+      model: "gpt-4o",
+    })
+      .withStructuredOutput(schemaSecondNode)
+      .withConfig({ tags: ["nostream"] });
+
+    const response = await llm.invoke([systemMessageInitial, ...messages]);
+    console.log("response secondNode - agent_graph/graph.ts : >>>>>");
+    console.log(response);
+
+    if (response.volver_al_menu) {
+      return { messages: [new AIMessage("")], volver_al_menu: true };
+    }
+
+    // Safeguard: si isFaq=true pero la respuesta es vacía o es una negativa, tratar como false
+    const negativePatterns = /no tengo|no encontr|lo siento|no dispongo|no puedo|no hay información|no figura/i;
+    const effectiveIsFaq = response.isFaq && response.answer.trim().length > 0 && !negativePatterns.test(response.answer);
+
+    if (effectiveIsFaq) {
+      return { messages: [new AIMessage(response.answer)], volver_al_menu: false };
+    }
+  }
+
+  // FAQ no encontrado O venimos de tools → llamar al modelo con tools disponibles
+  console.log(comingFromTools ? "secondNode: viniendo de tools, salteo FAQ check" : "secondNode: FAQ no encontrado, invocando modelo con tools");
+
+  const summaryConversation = await summarizeConversation(messages);
+  console.log("summaryConversation secondNode - agent_graph/graph.ts : >>>>>");
+  console.log(summaryConversation);
+
+  const prompt = await buildPrompt({ prompt: SYSTEM_PROMPT_PRIMEDIC_v2, summarize: summaryConversation.summary });
+  const systemMessage = new SystemMessage(prompt);
+
+  const responseEnsureToolResponse = await invokeWithBackoff(5, async () => {
+    try {
+      console.log("invoke model without fixer");
+      return await model.invoke([systemMessage, ...messages]);
+    } catch (err) {
+      if (isMissingToolResponseError(err)) {
+        const fixed = await ensureToolResponses(messages);
+        console.log("invoke model with fixer");
+        return await model.invoke([systemMessage, ...fixed]);
+      }
+      throw err;
+    }
+  });
+
+  console.log(responseEnsureToolResponse);
+
+  return { messages: [responseEnsureToolResponse], volver_al_menu: false, summarize: summaryConversation.summary };
+};
+
 
 const shouldContinue = (state: typeof stateAnnotation.State) => {
   const lastMessage = state.messages[state.messages.length - 1];
@@ -542,12 +553,13 @@ const shouldContinue = (state: typeof stateAnnotation.State) => {
 
 // Crear workflow
 const workflow = new StateGraph(stateAnnotation)
- 
-  .addNode("llm", llmNode)
+  .addNode("firstNode", firstNode)
+  .addNode("secondNode", secondNode)
   .addNode("tools", toolNode)
-  .addEdge(START, "llm")
-  .addConditionalEdges("llm", shouldContinue)
-  .addEdge("tools", "llm");
+  .addEdge(START, "firstNode")
+  .addConditionalEdges("firstNode", routeAfterFirstNode)
+  .addConditionalEdges("secondNode", shouldContinue)
+  .addEdge("tools", "secondNode");
 
 const memorySaver = new MemorySaver();
 

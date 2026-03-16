@@ -8,6 +8,48 @@ import { ChatOpenAI } from "@langchain/openai";
 import dotenv from "dotenv";
 dotenv.config();
 
+/*
+ Write(src\scripts\test-faq-tool.mts)
+  ⎿  Wrote 1 lines to src\scripts\test-faq-tool.mts
+       1 import { FaqsToolRetriever } from "../tools/faq_tool.mjs";
+       2 import dotenv from "dotenv";
+       3 dotenv.config();
+       4
+       5 const queries = [
+       6   "¿Qué farmacias tengo en La Plata con el plan Elite?",
+       7   "¿Qué cobertura tengo en kinesiología con el plan Basic?",
+       8   "¿Dónde puedo hacerme análisis de sangre en Chascomús?",
+       9   "¿Cuáles son las clínicas para internación en Berisso?",
+      10 ];
+
+● Para ejecutarlo:
+
+  npx tsx src/scripts/test-faq-tool.mts
+
+  El script prueba 4 consultas que cubren distintos casos:
+
+  ┌─────────────────────────────────┬─────────────────────────────────────────┐
+  │              Query              │              Qué verifica               │
+  ├─────────────────────────────────┼─────────────────────────────────────────┤
+  │ Farmacias La Plata / Elite      │ filtro por ciudad + plan                │
+  ├─────────────────────────────────┼─────────────────────────────────────────┤
+  │ Kinesiología / Basic            │ cobertura + keyword de especialidad     │
+  ├─────────────────────────────────┼─────────────────────────────────────────┤
+  │ Análisis de sangre en Chascomús │ laboratorios + ciudad distinta          │
+  ├─────────────────────────────────┼─────────────────────────────────────────┤
+  │ Clínicas internación en Berisso │ ciudad secundaria + keyword internación │
+  └─────────────────────────────────┴─────────────────────────────────────────┘
+
+  Para cada query vas a ver en la salida:
+  - El log interno "query in buildSchemaTool" con la query
+  - El schema que el LLM construyó (ciudades, planes, keywords)
+  - El responseRetriever con los documentos recuperados de Supabase
+
+  Si algo falla vas a ver el error categorizado por query, así podés identificar si es el LLM (schema building), el retriever
+  (Supabase/embeddings) o la tool en sí.
+
+*/
+
 const keywordsFaqs = [
   "administracion",
   "afalp",
@@ -184,7 +226,25 @@ export const FaqsToolRetriever = tool(
         });
         console.log("responseRetriever: >>>>>");
         console.log(responseRetriever);
-        return responseRetriever;
+        const promptRetriever = `En base a la siguiente informacion recuperada del contexto debes responder a la consulta del usuario, unicamente elabora una respuesta si encontras infomracion relevante en el contexto, si no encontras informacion relevante, no elabores ninguna respuesta. y por lo tanto responde 'no se encontró información relevante en el contexto'
+        ## Informacion recuperada del contexto
+        ${responseRetriever}
+        ## Consulta del usuario
+        ${query}
+        `;
+        const llm = new ChatOpenAI({
+          model: "gpt-4o",
+          apiKey: process.env.OPENAI_API_KEY ,
+          temperature: 0,
+        })
+          .withConfig({ tags: ["nostream"] });
+        const responseModel = await llm.invoke([
+          new SystemMessage(promptRetriever),
+       
+        ]);
+        console.log("responseModel tool_faq_retriever: >>>>>");
+        console.log(responseModel.content);
+        return responseModel;
       } else {
         return { error: "Error al construir el schema" };
       }
