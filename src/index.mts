@@ -112,18 +112,15 @@ app.post("/botmaker/webhook", async (req, res) => {
 
     if (body.TO === "me") {
 
-      // Descomentar en prod
-      // console.log("invokando al agente langgraph")
-      // console.log("[GRAPH] invoke start", { thread_id: customer_id, userMessage });
-      // const result = await primedicGraph.invoke({
-      //   messages: userMessage
-      // }, {
-      //   configurable: {
-      //     thread_id: customer_id,
-      //   },
-      // });
-      // console.log("[GRAPH] invoke done", { volver_al_menu: result?.volver_al_menu });
-
+      console.log("[GRAPH] invoke start", { thread_id: customer_id, userMessage });
+      const result = await primedicGraph.invoke({
+        messages: [userMessage]
+      }, {
+        configurable: {
+          thread_id: customer_id,
+        },
+      });
+      console.log("[GRAPH] invoke done", { volver_al_menu: result?.volver_al_menu, gotoRule: result?.gotoRule });
 
       // Registrar respuesta enviada por el agente
       if (customer_id) {
@@ -131,15 +128,15 @@ app.post("/botmaker/webhook", async (req, res) => {
         customerReplyCounts.set(customer_id, prevCount + 1);
       }
 
+      const volver_al_menu = result.volver_al_menu ?? false;
+      const gotoRule = result.gotoRule ?? null;
+      const replyText = result.messages[result.messages.length - 1].content as string;
 
-      console.log("result linee 72 - index.ts : >>>>>");
-      // const volver_al_menu = result.volver_al_menu ?? false;
-      // // console.log(result);
-      // // const responseAgent = result.messages[result.messages.length - 1].content as string
-      // return res.json({ replyText: result.messages[result.messages.length - 1].content as string, agent_is_speak: !volver_al_menu }).status(200); // Responder a Botmaker
-
-      // TEST: probar gotoRule estático
-      return res.json({ replyText: "Derivando a Autorizaciones...", agent_is_speak: false, gotoRule: "Prestadores" }).status(200);
+      return res.json({
+        replyText,
+        agent_is_speak: !volver_al_menu && !gotoRule,
+        ...(gotoRule && { gotoRule }),
+      }).status(200);
     }
 
     console.log("[WEBHOOK] ignorado: TO != 'me'", { TO: body?.TO });

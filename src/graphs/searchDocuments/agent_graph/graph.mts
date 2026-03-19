@@ -99,6 +99,10 @@ const stateAnnotation = Annotation.Root({
     default: () => false,
   }),
   summarize: Annotation<string>,
+  gotoRule: Annotation<string | null>({
+    value: (_prev, next) => next,
+    default: () => null,
+  }),
 });
 
 const schema = z.object({
@@ -425,77 +429,59 @@ const secondNode = async (state: typeof stateAnnotation.State) => {
   const comingFromTools = messages[messages.length - 1] instanceof ToolMessage;
 
   if (!comingFromTools) {
-    // Construir query enriquecida con perfil para que el retriever filtre mejor
-    const lastHumanMessage = messages.filter(m => m.type === "human").at(-1);
-    const baseQuery = String(lastHumanMessage?.content ?? "");
-    const faqQuery = profile
-      ? `${baseQuery} - plan: ${profile.plan}, localidad: ${profile.localidad}`
-      : baseQuery;
-
-    // Buscar en FAQs usando la tool de retrieval (en vez de contexto hardcodeado en el prompt)
-    let faqContext = "";
-    try {
-      const faqRaw = await FaqsToolRetriever.invoke({ query: faqQuery });
-      const faqResult = typeof faqRaw === "string" ? faqRaw : JSON.stringify(faqRaw);
-      if (faqResult.trim().length > 50) {
-        faqContext = faqResult;
-      }
-    } catch (err) {
-      console.error("Error al consultar FaqsToolRetriever:", err);
-    }
-    console.log("faqContext length:", faqContext.length);
-
     const profileContext = profile
       ? `Perfil del usuario: isAfiliate=${profile.isAfiliate}, plan=${profile.plan}, localidad=${profile.localidad}`
-      : "No se requiere perfil para esta consulta";
+      : "Sin perfil cargado aún";
 
-    const systemMessageInitial = new SystemMessage(`
-    Eres un asistente de Primedic Salud que atiende por WhatsApp dentro de un flujo con múltiples opciones (autorizaciones, prestadores, centro médico, ayudas económicas, etc.).
-    Tu tarea es identificar si la pregunta del usuario puede ser respondida con los documentos recuperados del sistema de FAQs.
-    También debes detectar si el usuario desea volver al menú principal o acceder a otra opción del flujo.
+    const systemMessageSecondNode = new SystemMessage(`
+Sos asistente de atención al afiliado de Primedic Salud (obra social de La Plata, Magdalena, Chascomús y Brandsen). Atendés por WhatsApp dentro de un flujo con múltiples secciones especializadas.
 
-    REGLA DE CIERRE / DERIVACIÓN AL MENÚ:
-    Marcá volver_al_menu = true cuando:
-    - El usuario se despide o agradece sin nueva consulta (ej: "gracias", "chau", "hasta luego", "listo gracias").
-    - El usuario pide explícitamente volver al menú o acceder a otra opción (ej: "quiero ver autorizaciones", "menú", "otras opciones", "volver").
-    - El asistente le sugirió al usuario volver al menú y el usuario acepta o confirma (ej: "ok", "dale", "sí").
-    Marcá volver_al_menu = false si el usuario agradece pero además hace una nueva consulta (ej: "gracias, y dónde queda?").
+## Perfil del usuario:
+${profileContext}
 
-    CONTEXTO CONVERSACIONAL (CLAVE): Si el último mensaje del asistente fue una pregunta/ofrecimiento y el usuario responde afirmando ("sí gracias", "dale"), NO es una finalización → volver_al_menu = false.
+## TU TAREA:
+Analizá la conversación y decidí la mejor acción. Tenés cuatro opciones:
+1. Responder directamente si es una consulta general que podés resolver.
+2. Marcar needsTool=true si necesitás buscar en cartilla de prestadores o documentos de planes/cobertura.
+3. Derivar al flujo correspondiente si la consulta es propia de una sección específica.
+4. Marcar volver_al_menu=true si el usuario se despide o cierra la conversación.
 
-    REGLA IMPORTANTE: Si los documentos recuperados no responden la consulta (isFaq=false), NO sugieras números de teléfono ni ir a la sucursal. En cambio, indicá brevemente que esta consulta no podés resolverla desde este módulo y sugerí al usuario que vuelva al menú principal para seleccionar la opción adecuada. La única excepción es urgencias médicas → SIPEM 221-451-3145.
+## REGLAS DE DERIVACIÓN:
+Derivá (gotoRule) cuando el usuario pida explícitamente una sección, o cuando su consulta sea claramente propia de esa sección y no puedas resolverla vos:
+- Gestionar/solicitar autorización médica → "Autorizaciones"
+- Buscar médicos, especialistas, farmacias, clínicas, laboratorios, prestadores → "Prestadores"
+- Consultas del CIM (Centro Integral de Medicina / Centro Médico) → "Centro Medico (CIM)"
+- Facturas, pagos, cuotas, deuda → "Facturación y Pagos"
+- Incorporar familiar, adherente, familiar al plan → "Incorporar familiar"
+- Subsidios, ayudas económicas, reintegros → "Ayudas Economicas"
+- Cambio de plan, subir o bajar de plan → "Subir/Bajar de Plan"
+- Solicitar o recuperar credencial → "Credenciales"
+- Problemas de identidad, datos personales → "Identidad"
+- Usuario no afiliado que quiere afiliarse → "Quiero afiliarme!"
 
-    Tendras una salida estructurada con el esquema provisto:
+Cuando derivás, escribí en "response" un mensaje cálido explicando adónde lo derivás y por qué (ej: "Para gestionar tu autorización te derivo a la sección de Autorizaciones, donde te van a ayudar mejor.").
 
-    ## Perfil del usuario:
-    ${profileContext}
+## REGLAS DE CIERRE:
+Marcá volver_al_menu=true cuando el usuario se despide o agradece sin nueva consulta ("gracias", "chau", "listo gracias"). Si agradece pero consulta algo más → volver_al_menu=false.
 
-    ## Documentos recuperados del sistema de FAQs (usá SOLO esta información para responder en caso de haya información provista):
-    ${faqContext || "No se recuperaron documentos relevantes para esta consulta."}
-    `);
+## REGLA IMPORTANTE:
+Si no podés resolver la consulta ni derivar a un flujo específico, indicá brevemente que no podés resolverla desde este módulo. Urgencias: SIPEM 221-451-3145.
+
+Los nombres EXACTOS de los flujos son: "Autorizaciones", "Centro Medico (CIM)", "Facturación y Pagos", "Prestadores", "Incorporar familiar", "Ayudas Economicas", "Subir/Bajar de Plan", "Credenciales", "Identidad", "Quiero afiliarme!"
+`);
 
     const schemaSecondNode = z.object({
-      answer: z
-        .string()
-        .describe(
-          "Respuesta positiva y específica basada ÚNICAMENTE en los documentos recuperados. Si los documentos NO contienen el dato concreto que pide el usuario (ej: nombre de un profesional, dirección específica), dejá este campo vacío ('') y marcá isFaq=false. NUNCA pongas respuestas del tipo 'Lo siento, no tengo información' — eso es isFaq=false, no una respuesta.",
-        ),
-      question: z.string().describe("La pregunta del usuario"),
-      isFaq: z
-        .boolean()
-        .describe(
-          "true SOLO si los documentos recuperados contienen la respuesta concreta y útil para el usuario (datos reales: nombre, dirección, teléfono, cobertura, etc.). false si: los documentos no tienen el dato, no encontraste al profesional/prestador buscado, o la respuesta sería 'no tengo información'. En caso de duda, marcá false para que otra herramienta busque.",
-        ),
-      volver_al_menu: z.boolean().describe("true si: (1) el usuario se despide/agradece sin nueva consulta, (2) pide volver al menú o acceder a otra opción del flujo (autorizaciones, prestadores, etc.), o (3) el asistente le sugirió volver al menú y el usuario acepta. false si el usuario agradece pero además hace una nueva consulta."),
+      response: z.string().describe("Tu respuesta al usuario. Si derivás, explicá brevemente adónde y por qué."),
+      needsTool: z.boolean().describe("true si necesitás buscar en cartilla de prestadores o documentos de planes/cobertura para responder. false en cualquier otro caso."),
+      volver_al_menu: z.boolean().describe("true si el usuario se despide o agradece sin nueva consulta, o pide volver al menú. false si agradece pero sigue consultando."),
+      gotoRule: z.string().nullable().describe("Nombre EXACTO del flujo al que derivar (de la lista disponible). null si no se necesita derivar."),
     });
 
-    const llm = new ChatOpenAI({
-      model: "gpt-4o",
-    })
+    const llm = new ChatOpenAI({ model: "gpt-4o" })
       .withStructuredOutput(schemaSecondNode)
       .withConfig({ tags: ["nostream"] });
 
-    const response = await llm.invoke([systemMessageInitial, ...messages]);
+    const response = await llm.invoke([systemMessageSecondNode, ...messages]);
     console.log("response secondNode - agent_graph/graph.ts : >>>>>");
     console.log(response);
 
@@ -503,12 +489,12 @@ const secondNode = async (state: typeof stateAnnotation.State) => {
       return { messages: [new AIMessage("")], volver_al_menu: true };
     }
 
-    // Safeguard: si isFaq=true pero la respuesta es vacía o es una negativa, tratar como false
-    const negativePatterns = /no tengo|no encontr|lo siento|no dispongo|no puedo|no hay información|no figura/i;
-    const effectiveIsFaq = response.isFaq && response.answer.trim().length > 0 && !negativePatterns.test(response.answer);
+    if (response.gotoRule) {
+      return { messages: [new AIMessage(response.response)], gotoRule: response.gotoRule, volver_al_menu: false };
+    }
 
-    if (effectiveIsFaq) {
-      return { messages: [new AIMessage(response.answer)], volver_al_menu: false };
+    if (!response.needsTool) {
+      return { messages: [new AIMessage(response.response)], volver_al_menu: false };
     }
   }
 
