@@ -1,10 +1,11 @@
 // import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 // import { OpenAIEmbeddings } from "@langchain/openai";
 // import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import fs from 'fs/promises';
+import fs from "fs/promises";
 
 // import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
 import { ChatOpenAI } from "@langchain/openai";
+import { ChatAnthropic } from "@langchain/anthropic";
 
 // import { ToolMessage } from "@langchain/core/messages";
 
@@ -60,13 +61,11 @@ export const pdfTool = tool(
   async ({ query }) => {
     // const vectorStore = new MemoryVectorStore(embeddings);
     // await vectorStore.addDocuments(docs);
-
     // const retriever = vectorStore.asRetriever({
     //   k: 5,
     // });
     // const docsFound = await retriever.invoke(query);
     // console.dir(docsFound, { depth: null });
-
     // const content = docsFound.map((doc) => doc.pageContent);
     // const texto = content.join(" ");
     // return texto;
@@ -79,10 +78,10 @@ export const pdfTool = tool(
       query: z
         .string()
         .describe(
-          "Consulta a realizar sobre el contenido del documento que contiene la informacion de Universal Assistance 2025"
+          "Consulta a realizar sobre el contenido del documento que contiene la informacion de Universal Assistance 2025",
         ),
     }),
-  }
+  },
 );
 
 // const tavilySearch = new TavilySearchResults({
@@ -116,7 +115,7 @@ export const cotizacion = tool(
       fecha: z.string().describe("Fecha de inicio del viaje"),
       pasajeros: z.number().describe("Cantidad de pasajeros"),
     }),
-  }
+  },
 );
 
 // Herramienta que simula sobre la cobertura vigente del usuario que consulta
@@ -166,7 +165,7 @@ Si necesitas más información sobre algún beneficio en particular o deseas rea
         tipo_de_documento: z.string().describe("Tipo de documento del usuario"),
       })
       .describe("Consulta sobre la cobertura vigente del usuario"),
-  }
+  },
 );
 
 const url =
@@ -194,9 +193,9 @@ const url =
 //     const cadenaJson = JSON.stringify(pisos_found);
 //     const prompt2 = `Segun los siguientes parametros: ${habitaciones} habitaciones, - $${precio_aproximado} precio aproximado, zona:  ${zona} , piscina: ${piscina} , ${superficie_total} superficie total, dame una lista de propiedades disponibles en el sistema.
 //         Estos son todos los pisos encontrados:
-        
+
 //         ${cadenaJson}
-        
+
 //         ### INSTRUCCIONES DE RESPUESTA:
 //         - Si no encontras una propiedad que cumpla con los 5 los requisitos, sugiere una propiedad que cumpla con 4 requisitos
 //         - Si no encontras una propiedad que cumpla con 4 requisitos, sugiere una propiedad que cumpla con 3 requisitos
@@ -210,7 +209,6 @@ const url =
 //         - la zona no puede estar alejada de la zona que el usuario ha solicitado ( unos 10 km maximo)
 
 //         Evalua los requisitos y responde con la propiedad mas acorde a los requisitos que el usuario ha solicitado, si no hay propiedades disponibles, responde que no hay propiedades disponibles segun sus requisitos.
-        
 
 //         `;
 
@@ -241,8 +239,6 @@ const url =
 //   }
 // );
 
-
-
 export const getPisos2 = tool(
   async ({
     habitaciones,
@@ -252,12 +248,14 @@ export const getPisos2 = tool(
     superficie_total,
     tipo_operacion,
   }) => {
-
-  
     console.log("Obteniendo pisos...");
-    console.log(habitaciones, precio_aproximado, zona, piscina, superficie_total);
-    
-    
+    console.log(
+      habitaciones,
+      precio_aproximado,
+      zona,
+      piscina,
+      superficie_total,
+    );
 
     try {
       // Validación de zona
@@ -279,9 +277,7 @@ export const getPisos2 = tool(
         : null;
       const superficieMin = superficieInput ? superficieInput * 0.7 : null;
       const superficieMax = superficieInput ? superficieInput * 1.2 : null;
-     
-        
-      
+
       const response = await fetch(url);
       if (!response.ok) {
         return "Hubo un error al consultar las propiedades. Por favor, intenta nuevamente.";
@@ -289,20 +285,18 @@ export const getPisos2 = tool(
 
       const pisos = await response.json();
 
-      
-      await fs.writeFile('pisos.json', JSON.stringify(pisos, null, 2), 'utf-8');
-
+      await fs.writeFile("pisos.json", JSON.stringify(pisos, null, 2), "utf-8");
 
       const pisos_filtrables = pisos
-        .map((p:any) => p.PRODUCT_PROPS)
-        .filter((p:any) => {
+        .map((p: any) => p.PRODUCT_PROPS)
+        .filter((p: any) => {
           const estado_ok = p.estado?.toLowerCase() !== "no disponible";
           const operacion_ok =
             p.tipo_operacion?.toLowerCase() === tipo_operacion.toLowerCase();
           return estado_ok && operacion_ok;
         });
 
-      const pisosPuntuados = pisos_filtrables.map((piso:any) => {
+      const pisosPuntuados = pisos_filtrables.map((piso: any) => {
         let score = 0;
 
         // Habitaciones
@@ -349,12 +343,12 @@ export const getPisos2 = tool(
 
       for (let minScore = 5; minScore >= 2; minScore--) {
         const matches = pisosPuntuados
-          .filter(({ score }:{score:any}) => score === minScore)
-          .map(({ piso }:{piso:any}) => piso);
+          .filter(({ score }: { score: any }) => score === minScore)
+          .map(({ piso }: { piso: any }) => piso);
 
         if (matches.length > 0) {
           return matches
-            .map((p:any) => {
+            .map((p: any) => {
               return `
             Ciudad: ${p.ciudad || "Sin dato"}
             Ubicación: ${p.ubicacion || p.zona || "Sin dato"}
@@ -365,10 +359,10 @@ export const getPisos2 = tool(
             Precio: ${p.precio ? `${p.precio} €` : "Sin dato"}
             Descripción: ${p.descripcion?.slice(0, 200).trim() || "Sin descripción"}...
             Características: ${
-                Array.isArray(p.caracteristicas)
-                  ? p.caracteristicas.join(", ")
-                  : "Sin dato"
-              }
+              Array.isArray(p.caracteristicas)
+                ? p.caracteristicas.join(", ")
+                : "Sin dato"
+            }
               `.trim();
             })
             .join("\n\n---------------------\n\n");
@@ -395,7 +389,7 @@ export const getPisos2 = tool(
         .string()
         .regex(
           /^\d+$/,
-          "Debe ser un número aproximado sin símbolos ni decimales"
+          "Debe ser un número aproximado sin símbolos ni decimales",
         )
         .describe("Precio aproximado de la propiedad en euros (ej: '550000')"),
 
@@ -419,5 +413,5 @@ export const getPisos2 = tool(
         .enum(["venta", "alquiler"])
         .describe("Indica si busca una propiedad en 'venta' o en 'alquiler'"),
     }),
-  }
+  },
 );

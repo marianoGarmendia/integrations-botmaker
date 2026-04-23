@@ -38,6 +38,8 @@ import { FaqsToolRetriever } from "../../../tools/faq_tool.mjs";
 import { PlansToolRetriever } from "../../../tools/plan_documents_tool.mjs";
 import { cartillasTools } from "../../../tools/cartillasTools.mjs";
 import { z } from "zod";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { PRIMEDIC_CORRECTIONS_RULES } from "./corrections_rules.mjs";
 
 // import { makeSupabaseRetriever } from "../shared/retrieval.mjs";
 // import { z } from "zod";
@@ -548,7 +550,84 @@ const shouldContinue = (state: typeof stateAnnotation.State) => {
   if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
     return "tools";
   }
-  return END;
+  return "validatorNode";
+};
+
+const validatorNode = async (state: typeof stateAnnotation.State) => {
+  const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
+
+  const content =
+    typeof lastMessage.content === "string"
+      ? lastMessage.content
+      : JSON.stringify(lastMessage.content);
+
+  // Saltar mensajes vacíos (cierre/menú) o con tool_calls (intermedios)
+  if (
+    !content ||
+    content.trim() === "" ||
+    (lastMessage.tool_calls && lastMessage.tool_calls.length > 0)
+  ) {
+    return {};
+  }
+
+  const { profile } = state;
+
+  const validatorSchema = z.object({
+    isCorrect: z
+      .boolean()
+      .describe("true si la respuesta cumple todas las reglas de PRIMEDIC"),
+    correctedResponse: z
+      .string()
+      .describe(
+        "La respuesta final a enviar al usuario. Si isCorrect=true, copiá la respuesta original sin ningún cambio. Si isCorrect=false, escribí la versión corregida aplicando las reglas.",
+      ),
+  });
+
+  const validatorLlm = new ChatAnthropic({
+    model: "claude-sonnet-4-5",
+    temperature: 0,
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  })
+    .withStructuredOutput(validatorSchema)
+    .withConfig({ tags: ["nostream"] });
+
+  const profileContext = profile
+    ? `Plan: ${profile.plan} | Localidad: ${profile.localidad} | Afiliado: ${profile.isAfiliate}`
+    : "Sin perfil disponible";
+
+  const systemPrompt = new SystemMessage(`Sos un validador de respuestas del asistente virtual de PRIMEDIC Salud.
+
+Tu tarea es verificar si la respuesta del asistente cumple con las reglas de negocio. Si no las cumple, corregirla.
+Mantené el mismo tono y extensión de la respuesta original. Solo corregí lo que viola las reglas.
+
+PERFIL DEL USUARIO:
+${profileContext}
+
+${PRIMEDIC_CORRECTIONS_RULES}
+
+RESPUESTA A EVALUAR:
+"${content}"
+
+Evaluá si la respuesta viola alguna regla. Si es correcta → isCorrect=true y copiá la respuesta original exactamente. Si hay algún problema → isCorrect=false y escribí la versión corregida.`);
+
+  const result = await validatorLlm.invoke([systemPrompt]);
+
+  if (result.isCorrect) {
+    console.log("validatorNode: respuesta correcta, sin cambios");
+    return {};
+  }
+
+  console.log("validatorNode: respuesta corregida");
+  console.log("original  :", content);
+  console.log("corregida :", result.correctedResponse);
+
+  // Reemplazar el mensaje usando el mismo ID para que el reducer lo sobreescriba
+  const correctedMessage = new AIMessage({
+    id: lastMessage.id,
+    content: result.correctedResponse,
+  });
+
+  return { messages: [correctedMessage] };
 };
 
 // Crear workflow
@@ -556,10 +635,12 @@ const workflow = new StateGraph(stateAnnotation)
   .addNode("firstNode", firstNode)
   .addNode("secondNode", secondNode)
   .addNode("tools", toolNode)
+  .addNode("validatorNode", validatorNode)
   .addEdge(START, "firstNode")
   .addConditionalEdges("firstNode", routeAfterFirstNode)
   .addConditionalEdges("secondNode", shouldContinue)
-  .addEdge("tools", "secondNode");
+  .addEdge("tools", "secondNode")
+  .addEdge("validatorNode", END);
 
 const memorySaver = new MemorySaver();
 
